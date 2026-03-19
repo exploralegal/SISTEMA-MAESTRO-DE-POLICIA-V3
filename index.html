@@ -3622,5 +3622,20 @@ function addPrest(){
 }
 function delPrest(i){ST.prestamos.splice(i,1);renderPrest();}
 </script>
+<script>
+fetch('base_datos_policias.json')
+  .then(r => r.json())
+  .then(data => {
+    data.policias.forEach(off => {
+      localStorage.setItem('pol2_' + off.placa.toUpperCase(), JSON.stringify(off));
+    });
+    console.log('Base cargada');
+  })
+  .catch(err => console.error('Error cargando la base:', err));
+</script>
+
+<script src="script.js"></script>
+
+</body>
 </body>
 </html>
