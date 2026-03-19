@@ -3226,5 +3226,18 @@ function delTurno(i){ST.turnos.splice(i,1);renderTurnos();}
   GRADOS.forEach((g,i)=>{const o=document.createElement('option');o.value=i;o.textContent=g.n;s.appendChild(o);});
 })();
 </script>
+  <script>
+fetch('base_datos_policias.json')
+  .then(r => r.json())
+  .then(data => {
+    data.policias.forEach(off => {
+      localStorage.setItem('pol2_' + off.placa.toUpperCase(), JSON.stringify(off));
+    });
+    console.log('Base cargada');
+  })
+  .catch(err => console.error('Error cargando la base:', err));
+</script>
+
+<script src="script.js"></script>
 </body>
 </html>
