@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Cargador BD — Sistema Policial</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;background:#0d1b2a;color:#f5f0e8;min-height:100vh;padding:20px}
+.card{background:#1b2d40;border:1px solid #2a3f56;border-radius:12px;max-width:700px;margin:0 auto;padding:28px}
+.logo{width:52px;height:52px;border:2px solid #c9a84c;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 18px}
+h1{font-size:17px;font-weight:600;text-align:center;margin-bottom:6px}
+p.sub{font-size:11px;color:#aaa;line-height:1.6;text-align:center;margin-bottom:20px}
+.btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
+.btn{padding:10px 24px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:'IBM Plex Sans',sans-serif;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-gold{background:#c9a84c;color:#0d1b2a}
+.btn-red{background:#8b1a1a;color:#fff}
+.btn-navy{background:#2a3f56;color:#f5f0e8}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:18px}
+.stat{text-align:center;padding:8px;background:#0d1b2a;border-radius:6px}
+.stat .n{font-size:18px;font-weight:700;color:#c9a84c}
+.stat .l{font-size:8px;color:#888;text-transform:uppercase;letter-spacing:.04em;font-family:'IBM Plex Mono',monospace;margin-top:2px}
+.progress{margin:16px 0;display:none}
+.prog-bar{height:5px;background:#2a3f56;border-radius:3px;overflow:hidden;margin-bottom:7px}
+.prog-fill{height:100%;background:#c9a84c;border-radius:3px;transition:width .08s}
+.prog-txt{font-size:10px;color:#aaa;font-family:'IBM Plex Mono',monospace;text-align:center}
+.result{margin-top:14px;padding:12px;border-radius:8px;font-size:11px;display:none}
+.result.ok{background:#1a6b3c22;border:1px solid #1a6b3c;color:#6ddda8}
+.result.err{background:#8b1a1a22;border:1px solid #8b1a1a;color:#e87b6a}
+.list{margin-top:14px;max-height:340px;overflow-y:auto}
+.li{font-size:10px;padding:3px 0;border-bottom:1px solid #2a3f56;display:flex;justify-content:space-between;gap:8px;font-family:'IBM Plex Mono',monospace;color:#888}
+.li .ok{color:#6ddda8}.li .fail{color:#e87b6a}
+.note{font-size:9px;color:#555;margin-top:10px;text-align:center}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">⚖</div>
+  <h1>Cargador de Base de Datos Policial</h1>
+  <p class="sub">Genera y carga <strong style="color:#c9a84c">50 funcionarios completos</strong> con todos los módulos del sistema.<br>Ábrelo en el <strong>mismo navegador</strong> donde usas el Sistema Maestro.</p>
+  <div class="stats">
+    <div class="stat"><div class="n">15</div><div class="l">Patrulleros</div></div>
+    <div class="stat"><div class="n">9</div><div class="l">Cabos</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">Sargentos</div></div>
+    <div class="stat"><div class="n">8</div><div class="l">Oficiales</div></div>
+    <div class="stat"><div class="n">11</div><div class="l">Alto mando</div></div>
+  </div>
+  <div class="btns">
+    <button class="btn btn-gold" onclick="loadDB()">⬇ Cargar 50 funcionarios</button>
+    <button class="btn btn-navy" onclick="previewDB()">👁 Vista previa</button>
+    <button class="btn btn-red" onclick="clearDB()">🗑 Limpiar BD</button>
+  </div>
+  <div class="progress" id="prog">
+    <div class="prog-bar"><div class="prog-fill" id="pfill" style="width:0%"></div></div>
+    <div class="prog-txt" id="ptxt">Preparando...</div>
+  </div>
+  <div class="result" id="result"></div>
+  <div class="list" id="listado"></div>
+  <div class="note">Prefijo: <code>pol2_</code> · Compatible con Sistema Maestro v3 · Todos los módulos completos</div>
+</div>
+
+<script>
+const SPREFIX = 'pol2_';
+const DGB = 25651118;
+const GRADOS_N = ['Patrullero','Cabo','Sargento','Teniente','Capitán','Mayor','Teniente Coronel','Coronel','Subcomandante','Comandante','Director General'];
+const SAL = [0.08,0.14,0.28,0.30,0.35,0.47,0.53,0.68,0.72,0.75,1.0].map(p=>Math.round(DGB*p));
+
+// ── Utilidades de fecha ────────────────────────────────────────────
+function fd(anosAtras, mesesExtra=0){
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - anosAtras);
+  d.setMonth(d.getMonth() - mesesExtra);
+  return d.toISOString().split('T')[0];
+}
+function ff(diasFuturo){
+  const d = new Date();
+  d.setDate(d.getDate() + diasFuturo);
+  return d.toISOString().split('T')[0];
+}
+function mesK(anosAtras=0, mesOffset=0){
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - anosAtras);
+  d.setMonth(d.getMonth() - mesOffset);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+function mesLabel(anosAtras=0, mesOffset=0){
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - anosAtras);
+  d.setMonth(d.getMonth() - mesOffset);
+  return d.toLocaleDateString('es-CO',{month:'long',year:'numeric'});
+}
+function rnd(min,max){ return min + Math.random()*(max-min); }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+// ── Generadores ───────────────────────────────────────────────────
+function mkAscensos(grado, ingDate){
+  const asc = [];
+  let base = new Date(ingDate);
+  const tiempos = [2,3,4,4,4,3,3,2,2,2];
+  for(let i = 0; i < grado; i++){
+    base = new Date(base);
+    base.setFullYear(base.getFullYear() + (tiempos[i]||3));
+    const esLibre = i >= 5;
+    const pts = esLibre ? null : Math.floor(rnd(72,98));
+    asc.push({
+      fecha: base.toISOString().split('T')[0],
+      gant: String(i), gnuevo: String(i+1),
+      res: `Resolución ${String(Math.floor(rnd(100,999))).padStart(4,'0')} del ${base.toLocaleDateString('es-CO')}`,
+      tipo: esLibre ? 'libre' : 'concurso',
+      concurso: esLibre ? null : {
+        ptotal: String(pts), pmin: '70',
+        pok: String(Math.floor(pts/2)), ptot: '50',
+        ensayo: (pts/10).toFixed(1),
+        entrevista: ((pts+rnd(-3,5))/10).toFixed(1),
+        resultado: 'aprobado', obs: ''
+      },
+      obs: ''
+    });
+  }
+  return asc;
+}
+
+function mkFormacion(grado, ingDate, edu){
+  const f = [];
+  const ingD = new Date(ingDate);
+  const prev = new Date(ingD); prev.setMonth(prev.getMonth()-6);
+  f.push({tipo:'Formación básica (ingreso)',inst:'Academia Nacional de Policía',lugar:'Capital',titulo:'Patrullero graduado',fi:prev.toISOString().split('T')[0],ff:ingDate,horas:'1.200 h',nota:rnd(7.5,9.8).toFixed(1)+'/10',estado:'Graduado / Aprobado',obs:''});
+  if(grado>=1){ const d=new Date(ingDate); d.setFullYear(d.getFullYear()+2); const d2=new Date(d); d2.setMonth(d2.getMonth()+2); f.push({tipo:'Curso de ascenso',inst:'Academia Nacional de Policía',lugar:'Capital',titulo:'Curso Ascenso a Cabo',fi:d.toISOString().split('T')[0],ff:d2.toISOString().split('T')[0],horas:'80 h',nota:rnd(7.8,9.5).toFixed(1)+'/10',estado:'Graduado / Aprobado',obs:''}); }
+  if(grado>=2){ const d=new Date(ingDate); d.setFullYear(d.getFullYear()+5); const d2=new Date(d); d2.setMonth(d2.getMonth()+3); f.push({tipo:'Curso de ascenso',inst:'Academia Nacional de Policía',lugar:'Capital',titulo:'Curso Ascenso a Sargento',fi:d.toISOString().split('T')[0],ff:d2.toISOString().split('T')[0],horas:'120 h',nota:rnd(8.0,9.6).toFixed(1)+'/10',estado:'Graduado / Aprobado',obs:''}); }
+  if(grado>=3){ const d=new Date(ingDate); d.setFullYear(d.getFullYear()+8); const d2=new Date(d); d2.setMonth(d2.getMonth()+4); f.push({tipo:'Curso de ascenso',inst:'Academia Nacional de Policía',lugar:'Capital',titulo:'Curso Ascenso a Teniente',fi:d.toISOString().split('T')[0],ff:d2.toISOString().split('T')[0],horas:'160 h',nota:rnd(8.2,9.7).toFixed(1)+'/10',estado:'Graduado / Aprobado',obs:''}); }
+  const unis = ['Universidad Nacional','Universidad Javeriana','Universidad Libre','Universidad Externado','Universidad de los Andes','Universidad del Rosario'];
+  const titulos = ['Abogado/a','Administrador/a Público','Psicólogo/a','Ingeniero/a de Sistemas','Criminalista','Contador/a Público'];
+  if(edu>=1) f.push({tipo:'Profesional universitario',inst:pick(unis),lugar:'Capital',titulo:pick(titulos),fi:fd(edu>=3?12:8,3),ff:fd(edu>=3?8:4,6),horas:'160 créditos',nota:rnd(3.7,4.9).toFixed(1)+'/5.0',estado:'Graduado / Aprobado',obs:''});
+  if(edu>=2) f.push({tipo:'Especialización',inst:pick(unis),lugar:'Capital',titulo:'Especialista en Seguridad y Defensa Pública',fi:fd(5,0),ff:fd(3,6),horas:'30 créditos',nota:rnd(4.1,4.9).toFixed(1)+'/5.0',estado:'Graduado / Aprobado',obs:''});
+  if(edu>=3) f.push({tipo:'Maestría',inst:'Universidad de los Andes',lugar:'Capital',titulo:'Magíster en Política Pública y Seguridad',fi:fd(8,0),ff:fd(6,0),horas:'60 créditos',nota:rnd(4.3,4.9).toFixed(1)+'/5.0',estado:'Graduado / Aprobado',obs:''});
+  if(edu>=4) f.push({tipo:'Doctorado',inst:'Universidad Nacional',lugar:'Capital',titulo:'Doctor en Ciencias Políticas',fi:fd(12,0),ff:fd(8,0),horas:'160 créditos',nota:rnd(4.5,5.0).toFixed(1)+'/5.0',estado:'Graduado / Aprobado',obs:'Tesis laureada'});
+  return f;
+}
+
+function mkHistorial(grado, ingDate, unidad, cargo, region){
+  const hist = [];
+  const REGIONES = ['Región Capital','Región Norte','Región Sur','Región Este','Región Oriente'];
+  const tiempos = [2,3,4,4,4,3,3,2];
+  let base = new Date(ingDate);
+  const cargosPorGrado = ['Patrullero de cuadrante','Cabo de turno','Sargento jefe','Teniente segundo al mando','Capitán comandante','Mayor comandante','Teniente Coronel comandante','Coronel comandante'];
+  for(let i = 0; i <= Math.min(grado, 7); i++){
+    const isCurrent = i === Math.min(grado, 7);
+    const dur = tiempos[i]||3;
+    const endD = isCurrent ? '' : new Date(base.getTime()+(dur*365.25*24*60*60*1000)).toISOString().split('T')[0];
+    hist.push({tipo:'Cargo', nombre:isCurrent?cargo:cargosPorGrado[i], region:isCurrent?region:pick(REGIONES), fi:base.toISOString().split('T')[0], ff:endD, motivo:i===0?'Asignación inicial':'Ascenso', obs:''});
+    if(!isCurrent) base = new Date(endD||new Date());
+  }
+  return hist;
+}
+
+function mkEtica(grado){
+  const mods = ['Evaluación anual completa de valores','Uso proporcional de la fuerza','Derechos humanos y trato digno','Integridad y anticorrupción','Presunción de inocencia y legalidad','Secreto profesional y confidencialidad'];
+  const count = 1+Math.floor(Math.random()*3);
+  return Array.from({length:count},(_,i)=>({
+    modulo: mods[i%mods.length],
+    fecha: fd(i+1, 2),
+    eval: grado>=6?'Procuraduría Policial':'Inspección General',
+    nota: rnd(7.5,9.9).toFixed(1),
+    min: '7',
+    vigencia: i===0 ? ff(Math.floor(rnd(30,300))) : fd(0,3),
+    obs: i===0?'Sin observaciones.':''
+  }));
+}
+
+function mkMeritos(grado, ingDate){
+  const tipos = ['Mención de honor','Premio por operación destacada','Reconocimiento por servicio comunitario','Medalla al mérito policial','Mejor funcionario del período','Premio al espíritu de cuerpo','Reconocimiento por mentoría institucional'];
+  const anosServ = Math.round((new Date()-new Date(ingDate))/(1000*60*60*24*365));
+  const count = Math.min(1+Math.floor(anosServ/3), 5);
+  const meritos = Array.from({length:count},(_,i)=>({
+    tipo: pick(tipos),
+    fecha: fd(i+1, Math.floor(rnd(0,8))),
+    aut: grado>=7?'Presidente de la República':grado>=5?'Director General':grado>=3?'Comandante Regional':'Comandante de Unidad',
+    res: `Res. ${String(Math.floor(rnd(100,999))).padStart(4,'0')}/${new Date().getFullYear()-i-1}`,
+    desc: 'Destacada actuación en cumplimiento de sus funciones institucionales.'
+  }));
+  if(anosServ>=5) meritos.push({tipo:'Condecoración 5 años de servicio',fecha:fd(anosServ-5,0),aut:'Director General',res:`Res. ${Math.floor(rnd(100,999))}/${new Date().getFullYear()-anosServ+5}`,desc:''});
+  if(anosServ>=10) meritos.push({tipo:'Condecoración 10 años de servicio',fecha:fd(anosServ-10,0),aut:'Director General',res:`Res. ${Math.floor(rnd(100,999))}/${new Date().getFullYear()-anosServ+10}`,desc:''});
+  if(anosServ>=20) meritos.push({tipo:'Condecoración 20 años de servicio',fecha:fd(anosServ-20,0),aut:'Director General',res:`Res. ${Math.floor(rnd(100,999))}/${new Date().getFullYear()-anosServ+20}`,desc:''});
+  return meritos;
+}
+
+function mkDisc(sanc, hasFalta){
+  if(!sanc && !hasFalta) return [];
+  const disc = [];
+  if(hasFalta && !sanc){
+    disc.push({tipo:'D',falta:'Leve',art:'Reglamento interno Art. 12',mod:'Culpa',est:'Archivado',fecha:fd(0,6),motivo:'Llegada tarde al turno',sancion:'Amonestación escrita',diasSusp:'',iniSusp:'',finSusp:'',desc:'Tardanza injustificada al turno. Primera vez en el año.'});
+  }
+  if(sanc){
+    disc.push({tipo:'D',falta:'Grave',art:'Art. 34 Num. 8 — Ley Disciplinaria',mod:'Culpa',est:'Condenado',fecha:fd(0,4),motivo:'Acumulación de faltas leves',sancion:'Suspensión 15 días sin remuneración',diasSusp:'15',iniSusp:fd(0,2),finSusp:fd(0,1),desc:'Falta grave por acumulación de tres tardanzas en el semestre y conducta irrespetuosa documentada.'});
+  }
+  return disc;
+}
+
+function mkVehiculos(grado){
+  const configs=[
+    {t:'Motocicleta reglamentaria',m:'Yamaha',mod:['FZ 150','XTZ 125','MT 03'],col:'Azul institucional',maxG:2},
+    {t:'Patrulla sedán compartida',m:'Chevrolet',mod:['Sail','Onix'],col:'Azul y blanco',minG:1,maxG:3},
+    {t:'Patrulla SUV asignada',m:'Toyota',mod:['Fortuner','Hilux'],col:'Azul institucional',minG:2,maxG:4},
+    {t:'Camioneta 4×4',m:'Toyota',mod:['Land Cruiser Prado','Hilux GR'],col:'Azul institucional',minG:4,maxG:5},
+    {t:'Camioneta 4×4 + vehículo de apoyo',m:'Toyota',mod:['Land Cruiser 200'],col:'Azul institucional',minG:5,maxG:6},
+    {t:'Vehículo blindado nivel II',m:'Toyota',mod:['Land Cruiser 200 Blindado'],col:'Azul oscuro institucional',minG:6},
+  ];
+  const valid = configs.filter(c=>(c.minG===undefined||grado>=c.minG)&&(c.maxG===undefined||grado<=c.maxG));
+  if(!valid.length) return [];
+  const c = valid[valid.length-1];
+  const L='ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const pl = L[Math.floor(Math.random()*L.length)]+L[Math.floor(Math.random()*L.length)]+L[Math.floor(Math.random()*L.length)]+'-'+String(Math.floor(rnd(100,999)));
+  return[{tipo:c.t,placa:pl,codigo:`VH-${String(Math.floor(rnd(1000,9999))).padStart(4,'0')}`,marca:c.m,modelo:pick(c.mod),anio:String(Math.floor(rnd(2019,2024))),color:c.col,dep:'Dirección Logística',fecha:fd(0,Math.floor(rnd(1,18))),estado:'Activo — en servicio',obs:''}];
+}
+
+function mkArmas(grado, esps){
+  const esLargo = ['GOES','Antinarcóticos','Antisecuestro y antiextorsión'].some(e=>(esps||[]).includes(e));
+  const marcas = ['Glock 17','Glock 19','Sig Sauer P226','Sig Sauer P320','CZ P-10'];
+  const series = ['GL','SIG','CZ'];
+  const mk = pick(marcas); const sr = pick(series);
+  const armas = [{tipo:'Pistola reglamentaria 9mm',serie:`${sr}-${new Date().getFullYear()}-${String(Math.floor(rnd(10000,99999)))}`,marca:mk,mun:'30',tipomun:'9mm FMJ',fecha:fd(0,Math.floor(rnd(1,12))),estado:'Asignada — en servicio',obs:''}];
+  if(esLargo && grado<=4) armas.push({tipo:'Carabina táctica 5.56mm',serie:`CAR-${new Date().getFullYear()}-${String(Math.floor(rnd(1000,9999))).padStart(4,'0')}`,marca:'Galil ACE 21',mun:'120',tipomun:'5.56mm OTAN',fecha:fd(0,2),estado:'Asignada — en servicio',obs:'Asignada para operativos específicos.'});
+  armas.push({tipo:'Esposas reglamentarias',serie:`ESP-${String(Math.floor(rnd(1000,9999))).padStart(4,'0')}`,marca:'Peerless',mun:'',tipomun:'',fecha:fd(0,Math.floor(rnd(1,18))),estado:'Asignada — en servicio',obs:''});
+  return armas;
+}
+
+function mkUniformes(grado){
+  const tC = pick(['XS','S','M','L','XL']); const tP = pick(['26×28','28×30','30×30','32×30','32×32','34×30']); const tZ = pick(['37','38','39','40','41','42','43','44']);
+  const us = [{tipo:'Uniforme de diario',id:`UNIF-${new Date().getFullYear()}-${String(Math.floor(rnd(1000,9999))).padStart(4,'0')}`,fecha:fd(0,Math.floor(rnd(3,24))),estado:'Entregado',tcamisa:tC,tpant:tP,tcalz:tZ,tchaleco:tC,elementos:['Camisa','Pantalón','Botas','Gorra','Chaleco táctico','Insignias y placa','Correa y hebilla'],obs:''}];
+  if(grado>=2) us.push({tipo:'Uniforme de gala',id:`GALA-${new Date().getFullYear()}-${String(Math.floor(rnd(1000,9999))).padStart(4,'0')}`,fecha:fd(0,Math.floor(rnd(1,12))),estado:'Entregado',tcamisa:tC,tpant:tP,tcalz:tZ,tchaleco:tC,elementos:['Camisa','Chaqueta / Blazer','Pantalón','Botas','Insignias y placa','Corbata','Guantes'],obs:''});
+  return us;
+}
+
+function mkSalud(){
+  return ['Examen médico periódico','Evaluación psicológica','Aptitud física institucional'].map((t,i)=>({
+    tipo:t, fecha:fd(0,i*4+1), inst:'Clínica Policial Central',
+    resultado:'Apto sin restricciones', vigencia:ff(180+i*60),
+    estado:'Apto — sin restricciones', obs:''
+  }));
+}
+
+function mkArmeria(armas){
+  const pts = Math.floor(rnd(68,97));
+  return[
+    {tipo:'mantenimiento',fecha:fd(0,3),arma:armas[0]?armas[0].serie:'—',tipomant:'Preventivo periódico',tecnico:'Armero Institucional',proxFecha:ff(90),obs:'Sin novedades. Arma en perfectas condiciones.',resultado:'',puntaje:'',eval:'',rondas:'',tipomun:'',circ:''},
+    {tipo:'tiro',fecha:fd(0,2),puntaje:String(pts),resultado:pts>=70?'Aprobado':'Reprobado — plan remedial',eval:'Instructor de tiro',proxFecha:ff(180),obs:`Puntaje ${pts}%.`,arma:'',tipomant:'',tecnico:'',rondas:'',tipomun:'',circ:''}
+  ];
+}
+
+function mkOperativos(grado, esps){
+  const tipos = ['Captura en flagrancia','Captura por orden judicial','Control de orden público','Patrullaje preventivo reforzado','Apoyo a Fiscalía / diligencia judicial','Operativo antinarcóticos'];
+  const lugares = ['Barrio El Carmen','Sector Industrial Norte','Centro Histórico','Zona Rosa','Estación Central','Vía Principal Km 14','Barrio Las Palmas','Sector Comercial Sur'];
+  const count = 2+Math.floor(rnd(1,7));
+  return Array.from({length:count},(_,i)=>{
+    const caps = Math.floor(rnd(0,4));
+    return{
+      tipo:pick(tipos),fecha:fd(0,i*2),
+      codigo:`OPE-${new Date().getFullYear()}-${String(Math.floor(rnd(10,9999))).padStart(4,'0')}`,
+      lugar:pick(lugares),unidad:'Estación '+String(Math.floor(rnd(1,12))).padStart(2,'0'),
+      rol:grado>=4?'Comandante del operativo':grado>=3?'Segundo al mando':'Participante general',
+      capturas:String(caps),
+      incaut:Math.random()>.65?String(Math.floor(rnd(1,10)))+' kg evidencia':'',
+      fuerza:Math.random()>.88?'no-letal':'no',
+      resultado:Math.random()>.3?'Exitoso':'Parcialmente exitoso',
+      entidades:Math.random()>.55?'Fiscalía General':'',
+      desc:`Operativo realizado en zona asignada. ${caps>0?caps+' captura(s) realizadas en flagrancia.':'Sin capturas en este operativo.'} Procedimiento ajustado al protocolo institucional.`,
+      circFuerza:'',informeFuerza:''
+    };
+  });
+}
+
+function mkTurnos(){
+  const count = 4+Math.floor(rnd(2,8));
+  return Array.from({length:count},(_,i)=>{
+    const esNoc = Math.random()>.65;
+    return{
+      fecha:fd(0,Math.floor(i/2)),
+      hi:esNoc?'18:00':'06:00',hf:esNoc?'06:00':'18:00',
+      tipo:esNoc?'Nocturno (18:00–06:00)':'Diurno (06:00–18:00)',
+      sector:`Cuadrante ${String.fromCharCode(65+Math.floor(rnd(0,4)))}-${Math.floor(rnd(1,9))}`,
+      comp:`Pl. ${pick(['P','C','S'])}-${String(Math.floor(rnd(1,15))).padStart(3,'0')}`,
+      novedad:'normal',obs:''
+    };
+  });
+}
+
+function mkPermisos(){
+  return Array.from({length:1+Math.floor(rnd(0,2))},(_,i)=>{
+    const fi = fd(0,3+i*3);
+    const fEnd = new Date(fi); fEnd.setDate(fEnd.getDate()+5);
+    return{tipo:pick(['Permiso remunerado','Vacaciones']),fi,ff:fEnd.toISOString().split('T')[0],dias:'5',aprobador:'Comandante de Unidad',estado:'Aprobado',res:`Memorando ${100+i}/${new Date().getFullYear()}`,obs:''};
+  });
+}
+
+function mkDesempeno(grado){
+  return Array.from({length:1+Math.floor(rnd(0,2))},(_,i)=>{
+    const b = rnd(7.2,9.8);
+    return{
+      periodo:`Semestre ${i%2===0?'1':'2'} — ${new Date().getFullYear()-Math.floor(i/2)}`,
+      fecha:fd(0,6*i+3),
+      eval:grado>=4?'Director de Área':grado>=3?'Comandante de Estación':'Sargento Jefe',
+      c1:(b+rnd(-0.5,0.5)).toFixed(1),c2:(b+rnd(-0.5,0.5)).toFixed(1),c3:(b+rnd(-0.5,0.5)).toFixed(1),c4:(b+rnd(-0.5,0.5)).toFixed(1),
+      c5:(b+rnd(-0.5,0.5)).toFixed(1),c6:(b+rnd(-0.5,0.5)).toFixed(1),c7:(b+rnd(-0.5,0.5)).toFixed(1),c8:(b+rnd(-0.5,0.5)).toFixed(1),
+      obs:`Funcionario con desempeño ${b>=8.5?'destacado':b>=7.5?'satisfactorio':'regular'}. ${b>=8?'Cumple todos los indicadores esperados para su nivel.':'Se recomienda refuerzo en áreas de oportunidad identificadas.'}`
+    };
+  });
+}
+
+function mkPrestamos(salario){
+  if(Math.random()>.5) return [];
+  const cuota = Math.round(salario*0.14/10000)*10000;
+  const total = cuota*24; const pag = Math.floor(rnd(2,14));
+  return[{tipo:'Libranza — fondo de empleados',entidad:'Fondo Nacional de Ahorro Policial',contrato:`LBZ-${new Date().getFullYear()}-${String(Math.floor(rnd(1000,9999))).padStart(4,'0')}`,total:String(total),cuota:String(cuota),pagadas:String(pag),ncuotas:'24',fi:fd(0,pag),ff:ff((24-pag)*30),estado:'Activo — en descuento',obs:'Crédito de libre inversión.'}];
+}
+
+function mkEncuesta(){
+  if(Math.random()>.55) return [];
+  const b = rnd(3.0,4.8);
+  return[{periodo:`Primer semestre ${new Date().getFullYear()}`,fecha:fd(0,3),aplicador:'Bienestar Institucional',c1:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),c2:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),c3:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),c4:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),c5:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),c6:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),c7:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),c8:String(Math.min(5,Math.round(b+rnd(-0.4,0.4)))),obs:'La carga laboral y el reconocimiento institucional son los principales factores señalados.'}];
+}
+
+function mkCiudadanos(){
+  if(Math.random()>.5) return [];
+  const esFel = Math.random()>.35;
+  return[{tipo:esFel?'felicitacion':'queja',fecha:fd(0,2),canal:'Presencial en estación',radicado:`RAD-${new Date().getFullYear()}-${String(Math.floor(rnd(100,999))).padStart(4,'0')}`,ciudadano:Math.random()>.4?'Ciudadano anónimo':pick(['Juan García López','María Martínez','Pedro Rodríguez','Carmen Silva']),estado:Math.random()>.3?'Resuelto favorablemente':'Recibido — en trámite',desc:esFel?'El funcionario atendió de manera ejemplar la situación reportada, demostrando profesionalismo y respeto hacia el ciudadano.':'Se reporta inconformidad con el tiempo de respuesta a la emergencia. El ciudadano solicita seguimiento.',respuesta:Math.random()>.35?'Caso revisado y atendido. Se agradece el reporte ciudadano. Se tomaron las medidas institucionales correspondientes.':''}];
+}
+
+function mkInterinst(grado){
+  if(grado<3||Math.random()>.45) return [];
+  const entidades = ['Fiscalía General','ICBF','Medicina Legal','INTERPOL','Defensoría del Pueblo'];
+  return[{entidad:pick(entidades),tipo:'Investigación compartida',exp:`FGN-${new Date().getFullYear()}-${String(Math.floor(rnd(100,999))).padStart(4,'0')}`,fi:fd(0,4),ff:'',estado:'Activo',obs:'Coordinación activa para el esclarecimiento del caso en cooperación institucional.'}];
+}
+
+function mkPersonalCargo(grado, nombre, idx, NAMES_ARR){
+  if(!(grado>=8||(grado>=3&&Math.random()>.4))) return [];
+  const count = grado>=8?Math.floor(rnd(4,8)):Math.floor(rnd(2,5));
+  return Array.from({length:count},(_,i)=>{
+    const pNm = NAMES_ARR[(idx+i+7)%NAMES_ARR.length];
+    const pG = Math.max(0,grado-1-Math.floor(rnd(0,2)));
+    return{placa:`${pG<=0?'P':pG<=1?'C':'S'}-${String(100+i).padStart(3,'0')}`,nombre:pNm[0]+' '+pNm[1],grado:String(pG),cargo:['Patrullero de cuadrante','Cabo de turno','Sargento jefe de turno'][Math.min(pG,2)],esp:['Policía comunitaria','Tránsito y transporte','Investigación criminal'][Math.floor(rnd(0,3))],estado:Math.random()>.12?'Activo':'En comisión',fecha:fd(0,Math.floor(rnd(1,12))),obs:''};
+  });
+}
+
+function mkHistDesp(grado, sal){
+  const count = 2+Math.floor(rnd(1,4));
+  return Array.from({length:count},(_,i)=>{
+    const B=sal; const bonT=Math.round(B*0.18); const aux=Math.round(B*0.05);
+    const dev=B+bonT+aux; const ded=Math.round((B+bonT)*0.04)*2+Math.round(B*0.01); const neto=dev-ded;
+    return{mesKey:mesK(0,i),mes:mesLabel(0,i),fecha:new Date().toLocaleDateString('es-CO'),grado,gradoNombre:GRADOS_N[grado]||'—',salarioBase:B,totalDevengado:dev,totalDeducciones:ded,neto,baseIBC:B+bonT,bonifs:[{n:'Antigüedad institución',p:8,v:Math.round(B*0.08)},{n:'Antigüedad cargo',p:10,v:Math.round(B*0.10)}],auxs:[{n:'Auxilio alimentación',v:120000}],deducciones:[{n:'Salud (4% IBC)',v:Math.round((B+bonT)*0.04)},{n:'Pensión (4% IBC)',v:Math.round((B+bonT)*0.04)},{n:'Fondo solidaridad (1%)',v:Math.round(B*0.01)}],sancionDias:0,sancionMonto:0,prestDescuentos:0};
+  });
+}
+
+// ── Datos base de los 50 funcionarios ────────────────────────────
+const NAMES=[
+  ['Andrés Felipe','Morales Suárez'],['Valentina','Restrepo Gómez'],['Luis Ernesto','Cardona Pérez'],
+  ['Johanna Marcela','Torres Quintero'],['Carlos Javier','Henao Muñoz'],['Diana Carolina','Ospina Ríos'],
+  ['Roberto Antonio','Vargas Mejía'],['Melissa Paola','Giraldo Castro'],['Fernando Alonso','Cruz Bermúdez'],
+  ['Sandra Milena','Arango Botero'],['Javier Alejandro','Patiño Cano'],['Patricia Lorena','Ríos Castillo'],
+  ['Jhon Jairo','Moreno Cárdenas'],['Gloria Inés','Camacho Figueroa'],['Raúl Fernando','Medina Torres'],
+  ['Mario Augusto','Castaño López'],['Adriana Isabel','Mejía Salazar'],['Gonzalo Enrique','Parra Nieto'],
+  ['Nicolás Alejandro','Ríos Guzmán'],['Esperanza Viviana','Cruz Molina'],['Sebastián','Giraldo Ríos'],
+  ['Laura Stefanía','Cano Pineda'],['Camilo Andrés','Bermúdez Soto'],['María Fernanda','Duque Arango'],
+  ['Jorge Luis','Pedraza Correa'],['Daniela Sofía','Arenas López'],['Andrés Mauricio','Leal Suárez'],
+  ['Paola Andrea','Londoño García'],['Héctor Fabio','Salcedo Monsalve'],['Gustavo Adolfo','Peña Barrera'],
+  ['Mónica Patricia','Salcedo Gómez'],['Natalia Esperanza','Vásquez Rueda'],['Rodrigo Andrés','Quintero Fajardo'],
+  ['Julián Camilo','Sánchez Arredondo'],['Claudia Patricia','Herrera Montoya'],['Ricardo Enrique','Londoño Soto'],
+  ['Germán Alberto','Ospina Velásquez'],['Álvaro Hernando','Meza Cano'],['Beatriz Elena','Ramírez Aguirre'],
+  ['Felipe Andrés','Castro Morales'],['Luisa Fernanda','Díaz Herrera'],['Sebastián Alberto','Gómez Ríos'],
+  ['Catalina','Vargas Peña'],['David Alejandro','Suárez Montoya'],['Natalia','Ramírez Ospina'],
+  ['Óscar Iván','Martínez Cano'],['Andrea Lucía','Pérez Salcedo'],['Juan Pablo','Arango Díaz'],
+  ['Marcela','Gómez Castro'],['Esteban','Torres Medina']
+];
+
+const ESPS_POOL=[
+  ['Policía comunitaria'],['Tránsito y transporte'],['Infancia y adolescencia'],['Ambiental y ecológica'],
+  ['Investigación criminal'],['Ciberseguridad'],['Inteligencia'],['Antinarcóticos'],['GOES'],
+  ['Antisecuestro y antiextorsión'],['Policía judicial'],['Inspección General'],
+  ['Protección de dignatarios'],['Investigación criminal','Policía judicial'],
+  ['Antinarcóticos','Antisecuestro y antiextorsión']
+];
+
+const UNIDADES=[
+  'Estación 01 Sur','Estación 02 Centro','Estación 03 Norte','Estación 04 Este','Estación 05 Capital',
+  'Estación 06 Norte','Estación 07 Centro','Estación 08 Sur','Estación 09 Norte','Estación 10 Norte',
+  'Estación 11 Periférica','Estación 12 Occidente','Dirección Antinarcóticos Regional',
+  'Dirección Ciberseguridad','Dirección GOES','Unidad GOES Sur','Subestación Km 14',
+  'Subestación Centro Histórico','Distrito 01 Capital','Distrito 04 Norte',
+  'Comando Región Sur','Comando Región Norte'
+];
+
+const REGIONES = ['Región Capital','Región Norte','Región Sur','Región Este','Región Oriente'];
+
+const CARGOS = [
+  ['Patrullero de cuadrante','Patrullera de cuadrante','Patrullero tránsito','Patrullera antinarcóticos'],
+  ['Cabo de turno','Cabo investigador/a','Cabo líder de cuadrante','Cabo ambiental'],
+  ['Sargento jefe de turno','Sargento comandante de subestación','Sargento segunda al mando'],
+  ['Teniente segundo al mando','Teniente comandante de estación','Teniente analista inteligencia'],
+  ['Capitán comandante de estación','Capitán jefe operativo','Capitán coordinador inteligencia'],
+  ['Mayor comandante de distrito','Mayor directora inteligencia'],
+  ['Teniente Coronel comandante de región','Teniente Coronel director operaciones'],
+  ['Coronel comandante de región','Coronel directora inteligencia nacional'],
+  ['Subcomandante Nacional'],['Comandante Nacional'],['Director General']
+];
+const EDU_POR_GRADO = [0,0,0,1,1,1,2,3,3,3,4];
+
+// 50 configuraciones: placa, grado, anosIngreso, sanc, espIndex, hasFalta
+const CONFIG50 = [
+  // 15 Patrulleros
+  ['8458',0,2,false,0,false],['4102',0,1,false,1,true],['2301',0,3,false,3,false],
+  ['1283',0,2,false,13,false],['5018',0,4,true,1,true],['5012',0,0.6,false,8,false],
+  ['4012',0,2,false,1,false],['4910',0,1.5,false,7,false],['3018',0,0.7,false,0,false],
+  ['0481',0,1,false,1,false],['7852',0,2.5,false,0,false],['9182',0,3,false,2,false],
+  ['0192',0,4,false,3,false],['1028',0,1,false,5,false],['7892',0,2,false,0,true],
+  // 9 Cabos
+  ['7128',1,5,false,0,false],['6082',1,6,false,13,false],['8612',1,7,false,1,false],
+  ['0518',1,5,false,4,false],['8741',1,8,false,1,true],['0732',1,6,false,0,false],
+  ['11928',1,7,false,3,false],['5728',1,5,false,10,false],['7981',1,6,false,11,false],
+  // 7 Sargentos
+  ['12944',2,12,false,0,false],['54918',2,11,false,2,false],['47891',2,13,false,1,false],
+  ['12409',2,10,false,0,false],['47010',2,14,false,8,false],['13028',2,12,false,4,false],
+  ['15929',2,11,false,3,false],
+  // 4 Tenientes
+  ['14959',3,16,false,4,false],['53422',3,17,false,5,false],
+  ['16492',3,15,false,1,false],['17203',3,18,false,6,false],
+  // 4 Capitanes
+  ['15492',4,20,false,2,false],['43719',4,21,false,14,false],
+  ['16929',4,19,false,13,false],['48901',4,22,false,8,false],
+  // 3 Mayores
+  ['18029',5,24,false,6,false],['56721',5,23,false,5,false],['26481',5,25,false,11,false],
+  // 2 Tenientes Coroneles
+  ['24301',6,28,false,6,false],['34919',6,30,false,9,false],
+  // 2 Coroneles
+  ['25020',7,33,false,6,false],['44812',7,35,false,11,false],
+  // 1 Subcomandante
+  ['36789',8,28,false,6,false],
+  // 1 Comandante
+  ['46023',9,32,false,6,false],
+  // 1 Director General
+  ['54839',10,38,false,6,false]
+];
+
+function buildOfficer([placa,grado,anosIng,sanc,espIdx,hasFalta], idx){
+  const nm = NAMES[idx % NAMES.length];
+  const nombre = nm[0]+' '+nm[1];
+  const ing = fd(anosIng, Math.floor(rnd(0,4)));
+  const car = fd(rnd(0.4,1.8));
+  const edu = EDU_POR_GRADO[grado]+(grado>=7?1:0);
+  const esps = ESPS_POOL[espIdx%ESPS_POOL.length];
+  const unidad = UNIDADES[idx % UNIDADES.length];
+  const region = REGIONES[idx % REGIONES.length];
+  const cargosGrado = CARGOS[Math.min(grado, CARGOS.length-1)];
+  const cargo = pick(cargosGrado);
+  const sal = SAL[grado];
+  const cedula = String(1000000000+Math.floor(rnd(0,900000000)));
+  const correo = (nm[0].toLowerCase().replace(/\s/g,'_')+'.'+nm[1].toLowerCase().split(' ')[0]).replace(/[^a-z._]/g,'')+'@policia.gov';
+  const armas = mkArmas(grado, esps);
+
+  return{
+    placa, nombre, grado, ing, car, edu, sanc, unidad, cargo, region, correo, cedula, foto:'',
+    especialidades: esps,
+    vehiculos: mkVehiculos(grado),
+    armas,
+    meritos: mkMeritos(grado, ing),
+    disc: mkDisc(sanc, hasFalta),
+    ascensos: mkAscensos(grado, ing),
+    formacion: mkFormacion(grado, ing, edu),
+    etica: mkEtica(grado),
+    uniformes: mkUniformes(grado),
+    historial: mkHistorial(grado, ing, unidad, cargo, region),
+    sal:{hj:Math.random()>.6?3:0,mt:Math.random()>.7,bi:Math.random()>.7?4:0,co:0,nc:Math.random()>.6,bt:grado<=2&&Math.random()>.5,mo:grado>=3&&grado<=7&&Math.random()>.5,am:grado>=7&&grado<=9&&Math.random()>.5,zn:0,ep:0},
+    docs:{},
+    permisos: mkPermisos(),
+    desempeno: mkDesempeno(grado),
+    armeria: mkArmeria(armas),
+    salud: mkSalud(),
+    interinst: mkInterinst(grado),
+    personalCargo: mkPersonalCargo(grado, nombre, idx, NAMES),
+    operativos: mkOperativos(grado, esps),
+    turnos: mkTurnos(),
+    histDesp: mkHistDesp(grado, sal),
+    prestamos: mkPrestamos(sal),
+    encuestas: mkEncuesta(),
+    ciudadanos: mkCiudadanos(),
+    log:[{fecha:new Date().toLocaleDateString('es-CO',{year:'numeric',month:'short',day:'numeric'}),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),grado:GRADOS_N[grado],unidad,cargo,resumen:`Carga inicial BD — ${nombre}`}]
+  };
+}
+
+// ── Acciones ──────────────────────────────────────────────────────
+function loadDB(){
+  document.getElementById('prog').style.display='block';
+  document.getElementById('listado').innerHTML='';
+  let loaded=0,failed=0;
+  const results=[];
+  function step(i){
+    if(i>=CONFIG50.length){
+      document.getElementById('pfill').style.width='100%';
+      document.getElementById('ptxt').textContent=`✓ ${loaded} cargados, ${failed} fallidos`;
+      const res=document.getElementById('result');
+      res.style.display='block';res.className='result '+(failed===0?'ok':'err');
+      res.textContent=failed===0?`✓ ${loaded} funcionarios cargados exitosamente. Búscalos por placa en el Sistema Maestro.`:`⚠ ${loaded} cargados, ${failed} errores.`;
+      renderList(results);return;
+    }
+    const cfg=CONFIG50[i];
+    document.getElementById('pfill').style.width=Math.round((i+1)/CONFIG50.length*100)+'%';
+    document.getElementById('ptxt').textContent=`Generando ${i+1}/${CONFIG50.length} — ${cfg[0]} · ${GRADOS_N[cfg[1]]}`;
+    try{
+      const off=buildOfficer(cfg,i);
+      localStorage.setItem(SPREFIX+cfg[0],JSON.stringify(off));
+      results.push({placa:cfg[0],nombre:off.nombre+' ('+GRADOS_N[cfg[1]]+')',ok:true});
+      loaded++;
+    }catch(e){
+      results.push({placa:cfg[0],nombre:'ERROR: '+e.message,ok:false});
+      failed++;
+    }
+    setTimeout(()=>step(i+1),14);
+  }
+  step(0);
+}
+
+function previewDB(){
+  const items=CONFIG50.map(([pl,g],i)=>({placa:pl,nombre:NAMES[i%NAMES.length][0]+' '+NAMES[i%NAMES.length][1]+' ('+GRADOS_N[g]+')',ok:true}));
+  renderList(items);
+  const res=document.getElementById('result');
+  res.style.display='block';res.className='result ok';
+  res.textContent=`Vista previa — ${CONFIG50.length} funcionarios listos para cargar.`;
+}
+
+function renderList(items){
+  document.getElementById('listado').innerHTML=
+    `<div style="margin-bottom:5px;font-size:10px;font-weight:600;color:#c9a84c;font-family:'IBM Plex Mono',monospace">PLACAS (${items.length}):</div>`+
+    items.map(r=>`<div class="li"><span>${r.placa}</span><span class="${r.ok?'ok':'fail'}">${r.nombre}</span></div>`).join('');
+}
+
+function clearDB(){
+  if(!confirm('¿Eliminar TODOS los funcionarios?')) return;
+  const del=[];
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith(SPREFIX))del.push(k);}
+  del.forEach(k=>localStorage.removeItem(k));
+  const res=document.getElementById('result');
+  res.style.display='block';res.className='result ok';
+  res.textContent=`✓ ${del.length} registros eliminados.`;
+  document.getElementById('listado').innerHTML='';
+}
+</script>
+</body>
+</html>
